@@ -1,0 +1,128 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  AGENT
+  CUSTOMER
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum AuditAction {
+  CREATED
+  STATUS_CHANGE
+  ASSIGNED
+  PRIORITY_CHANGE
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  name         String
+  passwordHash String   @map("password_hash")
+  role         Role     @default(CUSTOMER)
+  tokenVersion Int      @default(0) @map("token_version")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  createdTickets  Ticket[]     @relation("TicketCreator")
+  assignedTickets Ticket[]     @relation("TicketAssignee")
+  comments        Comment[]
+  attachments     Attachment[]
+  auditLogs       AuditLog[]
+
+  @@map("users")
+}
+
+// Leftmost Prefix Rule: index (status, priority, created_at DESC) works for queries on
+// (status), (status + priority), or (status + priority + created_at),
+// but NOT for a query that filters only by (priority).
+model Ticket {
+  id           String         @id @default(uuid()) @db.Uuid
+  title        String
+  description  String
+  category     String?
+  status       TicketStatus   @default(OPEN)
+  priority     TicketPriority @default(MEDIUM)
+  createdById  String         @map("created_by_id") @db.Uuid
+  assignedToId String?        @map("assigned_to_id") @db.Uuid
+  version      Int            @default(1)
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  creator     User         @relation("TicketCreator", fields: [createdById], references: [id])
+  assignee    User?        @relation("TicketAssignee", fields: [assignedToId], references: [id])
+  comments    Comment[]
+  attachments Attachment[]
+  auditLogs   AuditLog[]
+
+  @@index([status, priority, createdAt(sort: Desc)], name: "idx_tickets_status_priority_created")
+  @@index([assignedToId], name: "idx_tickets_assigned_to_id")
+  @@index([createdById], name: "idx_tickets_created_by_id")
+  @@map("tickets")
+}
+
+model Comment {
+  id         String   @id @default(uuid()) @db.Uuid
+  ticketId   String   @map("ticket_id") @db.Uuid
+  authorId   String   @map("author_id") @db.Uuid
+  body       String
+  isInternal Boolean  @default(false) @map("is_internal")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author User   @relation(fields: [authorId], references: [id])
+
+  @@index([ticketId, createdAt], name: "idx_comments_ticket_created")
+  @@map("comments")
+}
+
+model Attachment {
+  id           String   @id @default(uuid()) @db.Uuid
+  ticketId     String   @map("ticket_id") @db.Uuid
+  fileUrl      String   @map("file_url")
+  fileName     String   @map("file_name")
+  fileSize     Int      @map("file_size")
+  uploadedById String   @map("uploaded_by_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  ticket     Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  uploadedBy User   @relation(fields: [uploadedById], references: [id])
+
+  @@index([ticketId], name: "idx_attachments_ticket_id")
+  @@map("attachments")
+}
+
+model AuditLog {
+  id        String      @id @default(uuid()) @db.Uuid
+  ticketId  String      @map("ticket_id") @db.Uuid
+  actorId   String      @map("actor_id") @db.Uuid
+  action    AuditAction
+  oldValue  Json?       @map("old_value")
+  newValue  Json?       @map("new_value")
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  actor  User   @relation(fields: [actorId], references: [id])
+
+  @@index([ticketId, createdAt], name: "idx_audit_logs_ticket_created")
+  @@map("audit_logs")
+}
