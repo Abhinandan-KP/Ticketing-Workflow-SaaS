@@ -2,16 +2,19 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
-import { env } from './config/env.js';
+import { apiRouter } from './routes/index.js';
 import { errorHandler } from './middlewares/errorHandler.js';
 import { NotFoundError } from './utils/errors.js';
 
-const app = express();
+export const app = express();
 
 app.use(helmet());
-app.use(cors({ origin: true, credentials: true }));
+app.use(cors({ origin: 'http://localhost:3000', credentials: true }));
 app.use(express.json());
 app.use(cookieParser());
+
+// Mount all v1 API routes
+app.use('/api/v1', apiRouter);
 
 // 404 handler for unmatched routes
 app.use((req, _res, next) => {
@@ -20,7 +23,3 @@ app.use((req, _res, next) => {
 
 // Global error envelope (must be last)
 app.use(errorHandler);
-
-app.listen(env.PORT, () => {
-  console.log(`🚀 API running on http://localhost:${env.PORT} [${env.NODE_ENV}]`);
-});
